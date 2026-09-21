@@ -6,9 +6,9 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const manifest = {
     id: "community.pl.cda.addon",
-    version: "1.0.2",
+    version: "1.0.3",
     name: "Polskie CDA Addon",
-    description: "Wyszukuje polskie zrodla i lektora na CDA",
+    description: "Wyszukuje polskie zrodla i odtwarza strumienie z CDA",
     resources: ["stream"],
     types: ["movie", "series"],
     idPrefixes: ["tt"],
@@ -16,6 +16,63 @@ const manifest = {
 };
 
 const builder = new addonBuilder(manifest);
+
+// Funkcja dekodująca zabezpieczenie linku CDA (rot13 + zamiana znaków)
+function dekodujCdaUrl(str) {
+    if (!str) return null;
+    let decoded = str
+        .replace(/_XDDD/g, "")
+        .replace(/_CDA/g, "")
+        .replace(/_ADC/g, "")
+        .replace(/_CXD/g, "")
+        .replace(/_QWE/g, "")
+        .replace(/_Q5/g, "")
+        .replace(/_IKSDE/g, "");
+
+    try {
+        decoded = decodeURIComponent(decoded);
+    } catch (e) {}
+
+    let res = "";
+    for (let i = 0; i < decoded.length; i++) {
+        let code = decoded.charCodeAt(i);
+        if (code >= 33 && code <= 126) {
+            res += String.fromCharCode(33 + ((code + 14) % 94));
+        } else {
+            res += decoded.charAt(i);
+        }
+    }
+    return res;
+}
+
+// Pobieranie bezpośredniego pliku MP4 ze strony wideo CDA
+async function pobierzBezposredniLinkCDA(urlStrony) {
+    try {
+        const res = await axios.get(urlStrony, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer": "https://www.cda.pl/"
+            },
+            timeout: 5000
+        });
+
+        // Szukamy danych playera z zakodowanym adresem pliku
+        const matchFile = res.data.match(/"file":\s*"([^"]+)"/);
+        if (matchFile && matchFile[1]) {
+            const rawFile = matchFile[1];
+            if (rawFile.startsWith("http")) {
+                return rawFile;
+            }
+            const odkodowany = dekodujCdaUrl(rawFile);
+            if (odkodowany && odkodowany.startsWith("http")) {
+                return odkodowany;
+            }
+        }
+    } catch (err) {
+        console.error(`[CDA Resolver] Blad parsowania ${urlStrony}:`, err.message);
+    }
+    return null;
+}
 
 async function pobierzPolskiTytul(imdbId, type) {
     if (!TMDB_API_KEY) {
@@ -60,31 +117,40 @@ async function szukajNaCDA(fraza) {
         });
 
         const $ = cheerio.load(res.data);
-        const wyniki = [];
+        const znalezioneLinki = [];
 
         $('a[href*="/video/"]').each((i, el) => {
             const linkRel = $(el).attr("href");
-            let tytul = $(el).text().trim();
-            if (!tytul) {
-                tytul = $(el).attr("title") || "";
-            }
+            let tytul = $(el).text().trim() \vert{}\vert{}$(el).attr("title") || "";
 
             if (linkRel && tytul && tytul.length > 4 && !linkRel.includes("#comment")) {
                 const pelnyLink = linkRel.startsWith("http") ? linkRel : `https://www.cda.pl${linkRel}`;
-                
-                if (!wyniki.some(w => w.url === pelnyLink)) {
-                    wyniki.push({
-                        name: "CDA [Wideo]",
+                if (!znalezioneLinki.some(w => w.pageUrl === pelnyLink)) {
+                    znalezioneLinki.push({
                         title: tytul.replace(/\s+/g, " ").substring(0, 80),
-                        url: pelnyLink
+                        pageUrl: pelnyLink
                     });
                 }
             }
         });
 
-        const przefiltrowane = wyniki.slice(0, 6);
-        console.log(`[CDA] Znaleziono pasujacych pozycji: ${przefiltrowane.length}`);
-        return przefiltrowane;
+        const doSprawdzenia = znalezioneLinki.slice(0, 4);
+        console.log(`[CDA] Znaleziono ${doSprawdzenia.length} kandydatow do rozkodowania streamu...`);
+
+        const streams = [];
+        for (const pozycja of doSprawdzenia) {
+            const directUrl = await pobierzBezposredniLinkCDA(pozycja.pageUrl);
+            if (directUrl) {
+                streams.push({
+                    name: "CDA [MP4]",
+                    title: pozycja.title,
+                    url: directUrl
+                });
+            }
+        }
+
+        console.log(`[CDA] Gotowe bezposrednie strumienie: ${streams.length}`);
+        return streams;
 
     } catch (err) {
         console.error("Blad CDA:", err.message);
