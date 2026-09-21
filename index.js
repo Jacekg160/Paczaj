@@ -17,7 +17,6 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Funkcja dekodująca zabezpieczenie linku CDA (rot13 + zamiana znaków)
 function dekodujCdaUrl(str) {
     if (!str) return null;
     let decoded = str
@@ -45,7 +44,6 @@ function dekodujCdaUrl(str) {
     return res;
 }
 
-// Pobieranie bezpośredniego pliku MP4 ze strony wideo CDA
 async function pobierzBezposredniLinkCDA(urlStrony) {
     try {
         const res = await axios.get(urlStrony, {
@@ -56,7 +54,6 @@ async function pobierzBezposredniLinkCDA(urlStrony) {
             timeout: 5000
         });
 
-        // Szukamy danych playera z zakodowanym adresem pliku
         const matchFile = res.data.match(/"file":\s*"([^"]+)"/);
         if (matchFile && matchFile[1]) {
             const rawFile = matchFile[1];
@@ -85,14 +82,18 @@ async function pobierzPolskiTytul(imdbId, type) {
 
         if (type === "movie" && res.data.movie_results && res.data.movie_results.length > 0) {
             const film = res.data.movie_results[0];
+            let t = film.title;
+            if (!t) t = film.original_title;
             return {
-                tytul: film.title || film.original_title,
+                tytul: t,
                 rok: film.release_date ? film.release_date.split("-")[0] : ""
             };
         } else if (type === "series" && res.data.tv_results && res.data.tv_results.length > 0) {
             const serial = res.data.tv_results[0];
+            let t = serial.name;
+            if (!t) t = serial.original_name;
             return {
-                tytul: serial.name || serial.original_name,
+                tytul: t,
                 rok: serial.first_air_date ? serial.first_air_date.split("-")[0] : ""
             };
         }
@@ -121,7 +122,13 @@ async function szukajNaCDA(fraza) {
 
         $('a[href*="/video/"]').each((i, el) => {
             const linkRel = $(el).attr("href");
-            let tytul = $(el).text().trim() \vert{}\vert{}$(el).attr("title") || "";
+            let tytul = $(el).text().trim();
+            if (!tytul) {
+                tytul = $(el).attr("title");
+            }
+            if (!tytul) {
+                tytul = "";
+            }
 
             if (linkRel && tytul && tytul.length > 4 && !linkRel.includes("#comment")) {
                 const pelnyLink = linkRel.startsWith("http") ? linkRel : `https://www.cda.pl${linkRel}`;
