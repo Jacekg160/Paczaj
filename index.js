@@ -6,7 +6,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const manifest = {
     id: "community.pl.cda.addon",
-    version: "1.0.1",
+    version: "1.0.2",
     name: "Polskie CDA Addon",
     description: "Wyszukuje polskie zrodla i lektora na CDA",
     resources: ["stream"],
@@ -64,7 +64,10 @@ async function szukajNaCDA(fraza) {
 
         $('a[href*="/video/"]').each((i, el) => {
             const linkRel = $(el).attr("href");
-            const tytul = $(el).text().trim() \vert{}\vert{}$(el).attr("title");
+            let tytul = $(el).text().trim();
+            if (!tytul) {
+                tytul = $(el).attr("title") || "";
+            }
 
             if (linkRel && tytul && tytul.length > 4 && !linkRel.includes("#comment")) {
                 const pelnyLink = linkRel.startsWith("http") ? linkRel : `https://www.cda.pl${linkRel}`;
@@ -72,7 +75,7 @@ async function szukajNaCDA(fraza) {
                 if (!wyniki.some(w => w.url === pelnyLink)) {
                     wyniki.push({
                         name: "CDA [Wideo]",
-                        title: tytul.replace(/\s+/g, ' ').substring(0, 80),
+                        title: tytul.replace(/\s+/g, " ").substring(0, 80),
                         url: pelnyLink
                     });
                 }
