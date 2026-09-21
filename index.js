@@ -62,16 +62,13 @@ async function szukajNaCDA(fraza) {
         const $ = cheerio.load(res.data);
         const wyniki = [];
 
-        // Przeszukujemy elementy z filmami na stronie CDA
         $('a[href*="/video/"]').each((i, el) => {
             const linkRel = $(el).attr("href");
             const tytul = $(el).text().trim() \vert{}\vert{}$(el).attr("title");
 
-            // Filtrujemy tylko linki prowadzace do konkretnych filmow (omijamy duplikaty i miniatury)
             if (linkRel && tytul && tytul.length > 4 && !linkRel.includes("#comment")) {
                 const pelnyLink = linkRel.startsWith("http") ? linkRel : `https://www.cda.pl${linkRel}`;
                 
-                // Sprawdzamy czy link juz nie istnieje w wynikach
                 if (!wyniki.some(w => w.url === pelnyLink)) {
                     wyniki.push({
                         name: "CDA [Wideo]",
@@ -102,7 +99,6 @@ builder.defineStreamHandler(async ({ type, id }) => {
         return { streams: [] };
     }
 
-    // Szukamy po samym tytule dla wiekszej liczby trafien
     console.log(`[CDA] Szukam w CDA: "${dane.tytul}"`);
     const strumienie = await szukajNaCDA(dane.tytul);
 
