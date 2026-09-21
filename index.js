@@ -6,7 +6,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const manifest = {
     id: "community.pl.fanfilm.prosty",
-    version: "2.1.1",
+    version: "2.1.2",
     name: "Polskie CDA & Vider",
     description: "Zrodla CDA i Vider: filmy, seriale, lektor PL, jakosc 1080p/720p",
     resources: ["stream"],
@@ -81,21 +81,24 @@ function oznaczJakoscIWersje(tytul, link) {
     let jakosc = "720p";
     let score = 2;
 
-    if (/1080p|fhd|fullhd/i.test(tytul) || /1080p/i.test(link)) {
+    const tLower = tytul.toLowerCase();
+    const lLower = link.toLowerCase();
+
+    if (tLower.includes("1080p") || tLower.includes("fhd") || lLower.includes("1080p")) {
         jakosc = "1080p";
         score = 3;
-    } else if (/480p|360p|sd/i.test(tytul)) {
+    } else if (tLower.includes("480p") || tLower.includes("360p") || tLower.includes("sd")) {
         jakosc = "480p";
         score = 1;
     }
 
     let wersja = "";
-    if (/dubbing|dub/i.test(tytul)) {
-        wersja = " | Dubbing PL";
-    } else if (/lektor|pl/i.test(tytul)) {
-        wersja = " | Lektor PL";
-    } else if (/napisy|sub/i.test(tytul)) {
-        wersja = " | Napisy PL";
+    if (tLower.includes("dubbing") || tLower.includes("dub")) {
+        wersja = " - Dubbing PL";
+    } else if (tLower.includes("lektor") || tLower.includes("pl")) {
+        wersja = " - Lektor PL";
+    } else if (tLower.includes("napisy") || tLower.includes("sub")) {
+        wersja = " - Napisy PL";
     }
 
     return { jakosc, wersja, score };
@@ -119,12 +122,19 @@ async function szukajNaCDA(fraza) {
 
         $('a[href*="/video/"]').each((i, el) => {
             const linkRel = $(el).attr("href");
-            let tytul = $(el).text().trim() \vert{}\vert{}$(el).attr("title") || "";
+            let tytul = $(el).text().trim();
+            if (!tytul) {
+                tytul = $(el).attr("title");
+            }
+            if (!tytul) {
+                tytul = "";
+            }
 
             if (linkRel && tytul && tytul.length > 4 && !linkRel.includes("#comment")) {
                 if (!czyToZwiastunLubSmiec(tytul)) {
                     const pelnyLink = linkRel.startsWith("http") ? linkRel : `https://www.cda.pl${linkRel}`;
-                    if (!znalezioneLinki.some(w => w.pageUrl === pelnyLink)) {
+                    const juzJest = znalezioneLinki.some(w => w.pageUrl === pelnyLink);
+                    if (!juzJest) {
                         znalezioneLinki.push({
                             title: tytul.replace(/\s+/g, " "),
                             pageUrl: pelnyLink
@@ -173,12 +183,18 @@ async function szukajNaVider(fraza) {
 
         $('a[href*="/vid/"]').each((i, el) => {
             const href = $(el).attr("href");
-            const tytul = $(el).text().trim();
-            if (href && tytul && !czyToZwiastunLubSmiec(tytul) && !linki.some(l => l.href === href)) {
-                linki.push({
-                    href: href.startsWith("http") ? href : `https://vider.info${href}`,
-                    tytul: tytul.replace(/\s+/g, " ")
-                });
+            let tytul = $(el).text().trim();
+            if (!tytul) tytul = "";
+
+            if (href && tytul && !czyToZwiastunLubSmiec(tytul)) {
+                const czyJest = linki.some(l => l.href === href);
+                if (!czyJest) {
+                    const pelnyHref = href.startsWith("http") ? href : `https://vider.info${href}`;
+                    linki.push({
+                        href: pelnyHref,
+                        tytul: tytul.replace(/\s+/g, " ")
+                    });
+                }
             }
         });
 
@@ -223,12 +239,14 @@ async function pobierzPolskiTytul(imdbId, type) {
         if (type === "movie" && findRes.data.movie_results && findRes.data.movie_results.length > 0) {
             const m = findRes.data.movie_results[0];
             tmdbId = m.id;
-            fallbackTitle = m.title || m.original_title;
+            fallbackTitle = m.title;
+            if (!fallbackTitle) fallbackTitle = m.original_title;
             rok = m.release_date ? m.release_date.split("-")[0] : "";
         } else if (type === "series" && findRes.data.tv_results && findRes.data.tv_results.length > 0) {
             const s = findRes.data.tv_results[0];
             tmdbId = s.id;
-            fallbackTitle = s.name || s.original_name;
+            fallbackTitle = s.name;
+            if (!fallbackTitle) fallbackTitle = s.original_name;
             rok = s.first_air_date ? s.first_air_date.split("-")[0] : "";
         }
 
@@ -239,8 +257,13 @@ async function pobierzPolskiTytul(imdbId, type) {
         const detailsRes = await axios.get(detailsUrl);
 
         let plTitle = type === "series" ? detailsRes.data.name : detailsRes.data.title;
+        let ostatecznyTytul = plTitle;
+        if (!ostatecznyTytul) {
+            ostatecznyTytul = fallbackTitle;
+        }
+
         return {
-            tytul: plTitle || fallbackTitle,
+            tytul: ostatecznyTytul,
             rok: rok
         };
     } catch (err) {
@@ -276,7 +299,11 @@ builder.defineStreamHandler(async ({ type, id }) => {
     ]);
 
     let wszystkie = [...cdaStreams, ...viderStreams];
-    wszystkie.sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0));
+    wszystkie.sort((a, b) => {
+        const qA = a.qualityScore ? a.qualityScore : 0;
+        const qB = b.qualityScore ? b.qualityScore : 0;
+        return qB - qA;
+    });
 
     console.log(`[Sukces] Zwrocono ${wszystkie.length} streamow dla ${szukanaFraza}`);
     return { streams: wszystkie };
