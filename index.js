@@ -6,7 +6,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const manifest = {
     id: "community.pl.fanfilm.prosty",
-    version: "2.1.0",
+    version: "2.1.1",
     name: "Polskie CDA & Vider",
     description: "Zrodla CDA i Vider: filmy, seriale, lektor PL, jakosc 1080p/720p",
     resources: ["stream"],
@@ -90,9 +90,13 @@ function oznaczJakoscIWersje(tytul, link) {
     }
 
     let wersja = "";
-    if (/dubbing|dub/i.test(tytul)) wersja = " | Dubbing PL";
-    else if (/lektor|pl/i.test(tytul)) wersja = " | Lektor PL";
-    else if (/napisy|sub/i.test(tytul)) wersja = " | Napisy PL";
+    if (/dubbing|dub/i.test(tytul)) {
+        wersja = " | Dubbing PL";
+    } else if (/lektor|pl/i.test(tytul)) {
+        wersja = " | Lektor PL";
+    } else if (/napisy|sub/i.test(tytul)) {
+        wersja = " | Napisy PL";
+    }
 
     return { jakosc, wersja, score };
 }
@@ -130,7 +134,6 @@ async function szukajNaCDA(fraza) {
             }
         });
 
-        // Sprawdzamy do 8 kandydatów z listy
         const doSprawdzenia = znalezioneLinki.slice(0, 8);
         const streams = [];
 
@@ -258,7 +261,6 @@ builder.defineStreamHandler(async ({ type, id }) => {
     const dane = await pobierzPolskiTytul(imdbId, type);
     if (!dane) return { streams: [] };
 
-    // Tworzenie zoptymalizowanych fraz wyszukiwania
     let szukanaFraza = dane.tytul;
     if (type === "series" && season && episode) {
         const s = String(season).padStart(2, "0");
@@ -268,15 +270,12 @@ builder.defineStreamHandler(async ({ type, id }) => {
 
     console.log(`[Szukanie] Tytul: "${dane.tytul}", fraza: "${szukanaFraza}"`);
 
-    // Równoczesne odpytanie CDA i Vider
     const [cdaStreams, viderStreams] = await Promise.all([
         szukajNaCDA(szukanaFraza),
         szukajNaVider(szukanaFraza)
     ]);
 
     let wszystkie = [...cdaStreams, ...viderStreams];
-
-    // Sortowanie: 1080p na górę, potem 720p, na końcu SD
     wszystkie.sort((a, b) => (b.qualityScore || 0) - (a.qualityScore || 0));
 
     console.log(`[Sukces] Zwrocono ${wszystkie.length} streamow dla ${szukanaFraza}`);
