@@ -6,7 +6,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const manifest = {
     id: "community.pl.cda.addon",
-    version: "1.0.3",
+    version: "1.0.4",
     name: "Polskie CDA Addon",
     description: "Wyszukuje polskie zrodla i odtwarza strumienie z CDA",
     resources: ["stream"],
@@ -77,30 +77,61 @@ async function pobierzPolskiTytul(imdbId, type) {
         return null;
     }
     try {
-        const url = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id&language=pl-PL`;
-        const res = await axios.get(url);
+        // Krok 1: Wyszukanie ID w TMDB po identyfikatorze IMDB (tt...)
+        const findUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+        const findRes = await axios.get(findUrl);
 
-        if (type === "movie" && res.data.movie_results && res.data.movie_results.length > 0) {
-            const film = res.data.movie_results[0];
-            let t = film.title;
-            if (!t) t = film.original_title;
-            return {
-                tytul: t,
-                rok: film.release_date ? film.release_date.split("-")[0] : ""
-            };
-        } else if (type === "series" && res.data.tv_results && res.data.tv_results.length > 0) {
-            const serial = res.data.tv_results[0];
-            let t = serial.name;
-            if (!t) t = serial.original_name;
-            return {
-                tytul: t,
-                rok: serial.first_air_date ? serial.first_air_date.split("-")[0] : ""
-            };
+        let tmdbId = null;
+        let fallbackTitle = "";
+        let rok = "";
+
+        if (type === "movie" && findRes.data.movie_results && findRes.data.movie_results.length > 0) {
+            const m = findRes.data.movie_results[0];
+            tmdbId = m.id;
+            fallbackTitle = m.title;
+            if (!fallbackTitle) fallbackTitle = m.original_title;
+            rok = m.release_date ? m.release_date.split("-")[0] : "";
+        } else if (type === "series" && findRes.data.tv_results && findRes.data.tv_results.length > 0) {
+            const s = findRes.data.tv_results[0];
+            tmdbId = s.id;
+            fallbackTitle = s.name;
+            if (!fallbackTitle) fallbackTitle = s.original_name;
+            rok = s.first_air_date ? s.first_air_date.split("-")[0] : "";
         }
+
+        if (!tmdbId) {
+            console.log(`[TMDB] Nie znaleziono pozycji dla ${imdbId}`);
+            return null;
+        }
+
+        // Krok 2: Pobranie polskich metadanych dla znalezionego filmu/serialu
+        const mediaEndpoint = type === "series" ? "tv" : "movie";
+        const detailsUrl = `https://api.themoviedb.org/3/${mediaEndpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&language=pl-PL`;
+        const detailsRes = await axios.get(detailsUrl);
+
+        let plTitle = "";
+        if (type === "series") {
+            plTitle = detailsRes.data.name;
+        } else {
+            plTitle = detailsRes.data.title;
+        }
+
+        let tytulKoncowy = plTitle;
+        if (!tytulKoncowy) {
+            tytulKoncowy = fallbackTitle;
+        }
+
+        console.log(`[TMDB] Przetlumaczono ${imdbId} -> "${tytulKoncowy}" (${rok})`);
+
+        return {
+            tytul: tytulKoncowy,
+            rok: rok
+        };
+
     } catch (err) {
         console.error("Blad TMDB:", err.message);
+        return null;
     }
-    return null;
 }
 
 async function szukajNaCDA(fraza) {
