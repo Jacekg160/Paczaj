@@ -6,7 +6,7 @@ const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const manifest = {
     id: "community.pl.cda.addon",
-    version: "1.0.0",
+    version: "1.0.1",
     name: "Polskie CDA Addon",
     description: "Wyszukuje polskie zrodla i lektora na CDA",
     resources: ["stream"],
@@ -48,30 +48,44 @@ async function pobierzPolskiTytul(imdbId, type) {
 async function szukajNaCDA(fraza) {
     try {
         const urlSzukania = `https://www.cda.pl/info/${encodeURIComponent(fraza)}`;
+        console.log(`[CDA] URL zapytania: ${urlSzukania}`);
+
         const res = await axios.get(urlSzukania, {
             headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Referer": "https://www.cda.pl/"
+            },
+            timeout: 7000
         });
 
         const $ = cheerio.load(res.data);
         const wyniki = [];
 
-        $(".elem-wraper").slice(0, 5).each((i, el) => {
-            const linkRel = $(el).find("a.link-title-visit").attr("href");
-            const tytul = $(el).find("a.link-title-visit").text().trim();
-            const jakosc = $(el).find(".vinfo .quality").text().trim() || "SD";
+        // Przeszukujemy elementy z filmami na stronie CDA
+        $('a[href*="/video/"]').each((i, el) => {
+            const linkRel = $(el).attr("href");
+            const tytul = $(el).text().trim() \vert{}\vert{}$(el).attr("title");
 
-            if (linkRel && tytul) {
-                wyniki.push({
-                    name: `CDA [${jakosc}]`,
-                    title: tytul,
-                    url: `https://www.cda.pl${linkRel}`
-                });
+            // Filtrujemy tylko linki prowadzace do konkretnych filmow (omijamy duplikaty i miniatury)
+            if (linkRel && tytul && tytul.length > 4 && !linkRel.includes("#comment")) {
+                const pelnyLink = linkRel.startsWith("http") ? linkRel : `https://www.cda.pl${linkRel}`;
+                
+                // Sprawdzamy czy link juz nie istnieje w wynikach
+                if (!wyniki.some(w => w.url === pelnyLink)) {
+                    wyniki.push({
+                        name: "CDA [Wideo]",
+                        title: tytul.replace(/\s+/g, ' ').substring(0, 80),
+                        url: pelnyLink
+                    });
+                }
             }
         });
 
-        return wyniki;
+        const przefiltrowane = wyniki.slice(0, 6);
+        console.log(`[CDA] Znaleziono pasujacych pozycji: ${przefiltrowane.length}`);
+        return przefiltrowane;
+
     } catch (err) {
         console.error("Blad CDA:", err.message);
         return [];
@@ -79,18 +93,18 @@ async function szukajNaCDA(fraza) {
 }
 
 builder.defineStreamHandler(async ({ type, id }) => {
-    console.log(`[Stremio] Zapytanie: ${type} ${id}`);
+    console.log(`\n[Stremio] Zapytanie: ${type} ${id}`);
     const imdbId = id.split(":")[0];
     const dane = await pobierzPolskiTytul(imdbId, type);
 
     if (!dane) {
+        console.log("[TMDB] Nie udalo sie pobrac polskich metadanych.");
         return { streams: [] };
     }
 
-    const szukanaFraza = `${dane.tytul} ${dane.rok}`.trim();
-    console.log(`[CDA] Szukam w CDA: ${szukanaFraza}`);
-
-    const strumienie = await szukajNaCDA(szukanaFraza);
+    // Szukamy po samym tytule dla wiekszej liczby trafien
+    console.log(`[CDA] Szukam w CDA: "${dane.tytul}"`);
+    const strumienie = await szukajNaCDA(dane.tytul);
 
     return { streams: strumienie };
 });
