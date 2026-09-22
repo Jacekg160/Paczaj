@@ -1,80 +1,79 @@
 const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const axios = require("axios");
-const cheerio = require("cheerio");
+const cheerio = wymagaj("cheerio");
 
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 
 const manifest = {
     id: "community.pl.fanfilm.prosty",
-    version: "2.3.0",
-    name: "Polskie CDA & Vider | AIO-PL Edition",
-    description: "Agregator polskich zrodel z zaawansowanymi filtrami regex (AIOStreams style)",
-    resources: ["stream"],
-    types: ["movie", "series"],
+    wersja: "2.3.0",
+    nazwa: "Polskie CDA & Vider | AIO-PL Edition",
+    opis: "Agregator polskich zrodel z zaawansowanymi filtrami regex (styl AIOStreams)",
+    zasoby: ["strumień"],
+    typy: ["film", "serial"],
     idPrefixes: ["tt"],
-    catalogs: []
+    katalogi: []
 };
 
 const builder = new addonBuilder(manifest);
 
 // --- 1. ZAAWANSOWANE FILTRY REGEX (Tomf AIOStreams PL) ---
-const EXCLUDED_KEYWORDS = [
-    "trailer", "zwiastun", "screener", "telesynch", "telesync", 
-    "cam", "camrip", "hdcam", "ts", "tc", "scr", "onlyfans", 
-    "zapowiedź", "zapowiedz", "teaser", "recenzja"
+const WYKLUCZONE_SŁOWA_KLUCZOWE = [
+    "trailer", "zwiastun", "screener", "telesynch", "telesync",
+    „cam”, „camrip”, „hdcam”, „ts”, „tc”, „scr”, „onlyfans”,
+    "zapowiedş", "zapowiedz", "teaser", "recenzja"
 ];
 
-let polskieRegexy = [
-    /\b(pl|lektor|dubbing|napisy|pldub|plsub|polish)\b/i,
-    /(\[|\()(pl\vert{}lektor\vert{}dub)(\]\vert{}\))/i
+niech polskieRegexy = [
+    /\b(pl|lektor|dubbing|napisy|pldub|plsub|polski)\b/i,
+    /(\[|\()(pl|lektor|dub)(\]|\))/i
 ];
 
-// Opcjonalnie pobieramy najnowsze regexy z bazy Tomfa
-async function zaladujRegexyAIO() {
-    try {
-        const res = await axios.get("https://raw.githubusercontent.com/tomfle18/regex-pol/refs/heads/main/regex_pol_v1.json", { timeout: 4000 });
-        if (Array.isArray(res.data) && res.data.length > 0) {
+funkcja asynchroniczna zaladujRegexyAIO() {
+    próbować {
+        const res = wait axios.get("https://raw.githubusercontent.com/tomfle18/regex-pol/refs/heads/main/regex_pol_v1.json", { timeout: 4000 });
+        jeśli (Array.isArray(res.data) && res.data.length > 0) {
             polskieRegexy = res.data.map(p => new RegExp(p, "i"));
-            console.log(`[AIO-PL] Zaladowano ${polskieRegexy.length} oficjalnych regul regex z bazy.`);
+            console.log(`[AIO-PL] Zaladowano ${polskieRegexy.length} dodatkowe regul regex.`);
         }
-    } catch (e) {
-        console.log("[AIO-PL] Uzyto domyslnych wbudowanych regul regex.");
+    } złap (e) {
+        console.log("[AIO-PL] Uzyto domyslnych zastosowań regul regex.");
     }
 }
 zaladujRegexyAIO();
 
-function czyZawieraPolski(tytul) {
+funkcja czyZawieraPolski(tytuł) {
     return polskieRegexy.some(regex => regex.test(tytul));
 }
 
-function czySmiec(tytul) {
+funkcja czySmiec(tytuł) {
     const t = tytul.toLowerCase();
-    return EXCLUDED_KEYWORDS.some(slowo => {
-        const reg = new RegExp(`\\b${slowo}\\b`, "i");
-        return reg.test(t) || t.includes(slowo);
+    zwróć WYKLUCZONE_SŁOWA KLUCZOWE.some(slowo => {
+        const reg = nowy RegExp(`\\b${slowo}\\b`, "i");
+        zwróć reg.test(t) || t.includes(slowo);
     });
 }
 
-function parsujJakoscIWersje(tytul, link) {
-    let jakosc = "720p";
-    let score = 20;
+funkcja parsujJakoscIWersje(tytuł, link) {
+    niech jakosc = "720p";
+    niech wynik = 20;
 
     const tLower = tytul.toLowerCase();
     const lLower = link.toLowerCase();
 
-    if (tLower.includes("2160p") || tLower.includes("4k")) {
+    jeśli (tLower.includes("2160p") || tLower.includes("4k")) {
         jakosc = "4K";
-        score = 40;
+        wynik = 40;
     } else if (tLower.includes("1080p") || tLower.includes("fhd") || lLower.includes("1080p")) {
         jakosc = "1080p";
-        score = 30;
+        wynik = 30;
     } else if (tLower.includes("480p") || tLower.includes("360p") || tLower.includes("sd")) {
         jakosc = "480p";
-        score = 10;
+        wynik = 10;
     }
 
-    let wersja = "";
-    if (tLower.includes("dubbing") || tLower.includes("dub")) {
+    niech wersja = "";
+    jeśli (tLower.includes("dubbing") || tLower.includes("dub")) {
         wersja = "Dubbing PL";
     } else if (tLower.includes("lektor")) {
         wersja = "Lektor PL";
@@ -85,15 +84,15 @@ function parsujJakoscIWersje(tytul, link) {
     }
 
     const hasPl = wersja.length > 0;
-    if (hasPl) score += 100; // Priorytet dla potwierdzonego PL
+    jeśli (hasPl) wynik += 100;
 
     return { jakosc, wersja, score, hasPl };
 }
 
 // --- 2. DEKODOWANIE CDA ---
-function dekodujCdaUrl(str) {
-    if (!str) return null;
-    let decoded = str
+funkcja dekodujCdaUrl(str) {
+    jeśli (!str) zwraca null;
+    niech zdekodowane = str
         .replace(/_XDDD/g, "")
         .replace(/_CDA/g, "")
         .replace(/_ADC/g, "")
@@ -102,62 +101,62 @@ function dekodujCdaUrl(str) {
         .replace(/_Q5/g, "")
         .replace(/_IKSDE/g, "");
 
-    try { decoded = decodeURIComponent(decoded); } catch (e) {}
+    spróbuj { zdekodowane = decodeURIComponent(zdekodowane); } złap (e) {}
 
-    let res = "";
-    for (let i = 0; i < decoded.length; i++) {
-        let code = decoded.charCodeAt(i);
-        if (code >= 33 && code <= 126) {
-            res += String.fromCharCode(33 + ((code + 14) % 94));
-        } else {
-            res += decoded.charAt(i);
+    niech res = "";
+    dla (let i = 0; i < zdekodowana długość; i++) {
+        niech kod = zdekodowany.charCodeAt(i);
+        jeśli (kod >= 33 i kod <= 126) {
+            res += String.fromCharCode(33 + ((kod + 14) % 94));
+        } w przeciwnym razie {
+            res += zdekodowano.charAt(i);
         }
     }
-    return res;
+    zwróć res;
 }
 
-async function pobierzBezposredniLinkCDA(urlStrony) {
-    try {
-        const res = await axios.get(urlStrony, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
-                "Referer": "https://www.cda.pl/"
+funkcja asynchroniczna pobierzBezposredniLinkCDA(urlStrony) {
+    próbować {
+        const res = wait axios.get(urlStrony, {
+            nagłówki: {
+                „User-Agent”: „Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36”,
+                „Referer”: „https://www.cda.pl/”
             },
-            timeout: 5000
+            limit czasu: 5000
         });
 
-        const matchFile = res.data.match(/"file":\s*"([^"]+)"/);
-        if (matchFile && matchFile[1]) {
+        const matchFile = res.data.match(/"plik":\s*"([^"]+)"/);
+        jeśli (matchFile && matchFile[1]) {
             const raw = matchFile[1];
-            if (raw.startsWith("http")) return raw;
+            jeśli (raw.startsWith("http")) zwraca raw;
             const odkodowany = dekodujCdaUrl(raw);
-            if (odkodowany && odkodowany.startsWith("http")) return odkodowany;
+            jeśli (odkodowany && odkodowany.startsWith("http")) return odkodowany;
         }
-    } catch (e) {}
-    return null;
+    } złap (e) {}
+    zwróć null;
 }
 
-// --- 3. SCRAPERY ---
-async function szukajNaCDA(fraza) {
-    try {
+// --- 3. SKROBANIE ---
+funkcja asynchroniczna szukajNaCDA(fraza) {
+    próbować {
         const urlSzukania = `https://www.cda.pl/info/${encodeURIComponent(fraza)}`;
-        const res = await axios.get(urlSzukania, {
-            headers: {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
-                "Referer": "https://www.cda.pl/"
+        const res = wait axios.get(urlSzukania, {
+            nagłówki: {
+                „User-Agent”: „Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36”,
+                „Referer”: „https://www.cda.pl/”
             },
-            timeout: 6500
+            limit czasu: 6500
         });
 
         const $ = cheerio.load(res.data);
-        const znalezione = [];
+        stały stosowany = [];
 
         $('a[href*="/video/"]').each((i, el) => {
             const linkRel = $(el).attr("href");
-            let tytul = $(el).text().trim() \vert{}\vert{}$(el).attr("title") || "";
+            niech tytul = $(el).text().trim() || $(el).attr("title") || "";
 
-            if (linkRel && tytul.length > 4 && !linkRel.includes("#comment")) {
-                if (!czySmiec(tytul)) {
+            jeśli (linkRel && tytul.length > 4 && !linkRel.includes("#comment")) {
+                jeśli (!czySmiec(tytuł)) {
                     const pelnyLink = linkRel.startsWith("http") ? linkRel : `https://www.cda.pl${linkRel}`;
                     if (!znalezione.some(w => w.pageUrl === pelnyLink)) {
                         znalezione.push({ title: tytul.replace(/\s+/g, " "), pageUrl: pelnyLink });
@@ -166,42 +165,42 @@ async function szukajNaCDA(fraza) {
             }
         });
 
-        const streams = [];
+        const strumienie = [];
         for (const poz of znalezione.slice(0, 8)) {
-            const directUrl = await pobierzBezposredniLinkCDA(poz.pageUrl);
-            if (directUrl) {
+            const directUrl = czekaj na pobierzBezposredniLinkCDA(poz.pageUrl);
+            jeśli (directUrl) {
                 const info = parsujJakoscIWersje(poz.title, directUrl);
-                const plTag = info.hasPl ? "🇵🇱 " : "";
-                const tagWersji = info.wersja ? ` • ${info.wersja}` : "";
+                const plTag = info.hasPl? „đŸ‡ľđŸ‡ą „: „”;
+                const tagWersja = info.wersja ? ` â€˘ ${info.wersja}` : "";
                 
-                streams.push({
-                    name: `${plTag}CDA [${info.jakosc}]`,
-                    title: `${poz.title}${tagWersji}`,
+                strumienie.push({
+                    nazwa: `${plTag}CDA [${info.jakosc}]`,
+                    tytuł: `${poz.title}${tagWerssji}`,
                     url: directUrl,
                     qualityScore: info.score
                 });
             }
         }
-        return streams;
-    } catch (err) {
-        return [];
+        strumienie powrotne;
+    } złapać (błąd) {
+        powrót [];
     }
 }
 
-async function szukajNaVider(fraza) {
-    try {
+funkcja asynchroniczna szukajNaVider(fraza) {
+    próbować {
         const urlSzukania = `https://vider.info/szukaj?q=${encodeURIComponent(fraza)}`;
-        const res = await axios.get(urlSzukania, {
-            headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-            timeout: 6500
+        const res = wait axios.get(urlSzukania, {
+            nagłówki: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+            limit czasu: 6500
         });
 
         const $ = cheerio.load(res.data);
-        const znalezione = [];
+        stały stosowany = [];
 
         $('a[href*="/vid/"]').each((i, el) => {
             const href = $(el).attr("href");
-            let tytul = $(el).text().trim() || "";
+            niech tytul = $(el).text().trim() || „”;
 
             if (href && tytul && !czySmiec(tytul)) {
                 const pelnyHref = href.startsWith("http") ? href : `https://vider.info${href}`;
@@ -211,121 +210,120 @@ async function szukajNaVider(fraza) {
             }
         });
 
-        const streams = [];
-        for (const item of znalezione.slice(0, 5)) {
-            try {
-                const vidPage = await axios.get(item.href, {
-                    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-                    timeout: 4000
+        const strumienie = [];
+        for (stała pozycja znalezione.slice(0, 5)) {
+            próbować {
+                const vidPage = czekaj na axios.get(item.href, {
+                    nagłówki: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+                    limit czasu: 4000
                 });
                 const matchMp4 = vidPage.data.match(/(https?:\/\/[^"']+\.mp4[^"']*)/i);
-                if (matchMp4 && matchMp4[1]) {
+                jeśli (matchMp4 && matchMp4[1]) {
                     const directUrl = matchMp4[1];
                     const info = parsujJakoscIWersje(item.tytul, directUrl);
-                    const plTag = info.hasPl ? "🇵🇱 " : "";
-                    const tagWersji = info.wersja ? ` • ${info.wersja}` : "";
+                    const plTag = info.hasPl? „đŸ‡ľđŸ‡ą „: „”;
+                    const tagWersja = info.wersja ? ` â€˘ ${info.wersja}` : "";
 
-                    streams.push({
-                        name: `${plTag}Vider [${info.jakosc}]`,
-                        title: `${item.tytul}${tagWersji}`,
+                    strumienie.push({
+                        nazwa: `${plTag}Vider [${info.jakosc}]`,
+                        tytuł: `${item.tytul}${tagWerssji}`,
                         url: directUrl,
                         qualityScore: info.score
                     });
                 }
-            } catch (e) {}
+            } złap (e) {}
         }
-        return streams;
-    } catch (err) {
-        return [];
+        strumienie powrotne;
+    } złapać (błąd) {
+        powrót [];
     }
 }
 
-// --- 4. POBIERANIE METADANYCH TMDB ---
-async function pobierzPolskiTytul(imdbId, type) {
-    if (!TMDB_API_KEY) return null;
-    try {
+// --- 4. Baza danych TMDB ---
+funkcja asynchroniczna pobierzPolskiTytul(imdbId, type) {
+    jeśli (!TMDB_API_KEY) zwróć wartość null;
+    próbować {
         const findUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
-        const findRes = await axios.get(findUrl);
+        const findRes = czekaj na axios.get(findUrl);
 
-        let tmdbId = null;
-        let fallbackTitle = "";
-        let rok = "";
+        niech tmdbId = null;
+        niech fallbackTitle = "";
+        niech rok = "";
 
-        if (type === "movie" && findRes.data.movie_results && findRes.data.movie_results.length > 0) {
+        jeśli (typ === "film" && findRes.data.movie_results && findRes.data.movie_results.length > 0) {
             const m = findRes.data.movie_results[0];
             tmdbId = m.id;
             fallbackTitle = m.title || m.original_title;
             rok = m.release_date ? m.release_date.split("-")[0] : "";
-        } else if (type === "series" && findRes.data.tv_results && findRes.data.tv_results.length > 0) {
-            const s = findRes.data.tv_results[0];
+        } else if (typ === "seria" && findRes.data.tv_results && findRes.data.tv_results.length > 0) {
+            stała s = findRes.data.tv_results[0];
             tmdbId = s.id;
             fallbackTitle = s.name || s.original_name;
             rok = s.first_air_date ? s.first_air_date.split("-")[0] : "";
         }
 
-        if (!tmdbId) return null;
+        jeśli (!tmdbId) zwraca null;
 
         const mediaEndpoint = type === "series" ? "tv" : "movie";
         const detailsUrl = `https://api.themoviedb.org/3/${mediaEndpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&language=pl-PL`;
-        const detailsRes = await axios.get(detailsUrl);
+        const detailsRes = czekaj na axios.get(detailsUrl);
 
-        let plTitle = type === "series" ? detailsRes.data.name : detailsRes.data.title;
-        return {
+        niech plTitle = type === "seria" ? detailsRes.data.name : detailsRes.data.title;
+        powrót {
             tytul: plTitle || fallbackTitle,
             rok: rok
         };
-    } catch (err) {
-        return null;
+    } złapać (błąd) {
+        zwróć null;
     }
 }
 
 // --- 5. STRUMIENIE ---
-builder.defineStreamHandler(async ({ type, id }) => {
+builder.defineStreamHandler(async ({typ, id}) => {
     console.log(`\n[AIO-PL] Zapytanie: ${type} ${id}`);
 
-    const parts = id.split(":");
-    const imdbId = parts[0];
-    const season = parts[1] ? parseInt(parts[1], 10) : null;
-    const episode = parts[2] ? parseInt(parts[2], 10) : null;
+    const części = id.split(":");
+    const imdbId = części[0];
+    const sezon = części[1] ? parseInt(części[1], 10) : null;
+    const episode = części[2] ? parseInt(części[2], 10) : null;
 
-    const dane = await pobierzPolskiTytul(imdbId, type);
-    if (!dane) return { streams: [] };
+    const dane = czekaj na pobierzPolskiTytul(imdbId, typ);
+    jeśli (!dane) zwróć { strumienie: [] };
 
-    const frazy = [];
-    if (type === "series" && season && episode) {
-        const s = String(season).padStart(2, "0");
+    stała fraza = [];
+    jeśli (typ === "seria" && sezon && odcinek) {
+        const s = String(sezon).padStart(2, "0");
         const e = String(episode).padStart(2, "0");
         frazy.push(`${dane.tytul} s${s}e${e}`);
         frazy.push(`${dane.tytul} sezon ${season} odcinek ${episode}`);
-    } else {
+    } w przeciwnym razie {
         frazy.push(dane.tytul);
         if (dane.rok) frazy.push(`${dane.tytul} ${dane.rok}`);
     }
 
     console.log(`[AIO-PL] Szukam: "${frazy[0]}"`);
 
-    let zebrane = [];
-    for (const fraza of frazy) {
-        const [cda, vider] = await Promise.all([
+    niech zebrane = [];
+    dla (const fraza frazy) {
+        const [cda, vider] = czekaj na Promise.all([
             szukajNaCDA(fraza),
             szukajNaVider(fraza)
         ]);
 
-        for (const st of [...cda, ...vider]) {
-            if (!zebrane.some(x => x.url === st.url)) {
+        dla (const st z [...cda, ...vider]) {
+            jeśli (!zebrane.some(x => x.url === st.url)) {
                 zebrane.push(st);
             }
         }
-        if (zebrane.length > 0) break;
+        jeśli (zebrane.length > 0) przerwa;
     }
 
-    // Sortowanie: Najpierw potwierdzone PL (flaga), potem najwyzsza jakosc
     zebrane.sort((a, b) => b.qualityScore - a.qualityScore);
 
     console.log(`[AIO-PL] Zwrocono ${zebrane.length} zrodel`);
-    return { streams: zebrane };
+    zwróć { strumienie: zebrane };
 });
 
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port: port });
-console.log(`Serwer AIO-PL dziala na porcie ${port}`);
+console.log(`Serwer AIO-PL działał na porcie ${port}`);
