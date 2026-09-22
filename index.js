@@ -8,7 +8,7 @@ const manifest = {
     id: 'community.pl.fanfilm.prosty',
     version: '2.3.1',
     name: 'Polskie CDA & Vider | AIO-PL Edition',
-    description: 'Agregator polskich zrodel z zaawansowanymi filtrami regex',
+    description: 'Agregator polskich zrodel z filtrami AIO-PL',
     resources: ['stream'],
     types: ['movie', 'series'],
     idPrefixes: ['tt'],
@@ -17,7 +17,6 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// --- 1. FILTRY I REGEXY ---
 const EXCLUDED_KEYWORDS = [
     'trailer', 'zwiastun', 'screener', 'telesynch', 'telesync', 
     'cam', 'camrip', 'hdcam', 'ts', 'tc', 'scr', 'onlyfans', 
@@ -26,14 +25,14 @@ const EXCLUDED_KEYWORDS = [
 
 let polskieRegexy = [
     /\b(pl|lektor|dubbing|napisy|pldub|plsub|polish)\b/i,
-    /(\[|\()(pl\vert{}lektor\vert{}dub)(\]\vert{}\))/i
+    /(\[|\()(pl|lektor|dub)(\]|\))/i
 ];
 
 async function zaladujRegexyAIO() {
     try {
         const res = await axios.get('https://raw.githubusercontent.com/tomfle18/regex-pol/refs/heads/main/regex_pol_v1.json', { timeout: 4000 });
         if (Array.isArray(res.data) && res.data.length > 0) {
-            polskieRegexy = res.data.map(p => new RegExp(p, 'i'));
+            polskieRegexy = res.data.map(function(p) { return new RegExp(p, 'i'); });
             console.log('[AIO-PL] Zaladowano baze regexow.');
         }
     } catch (e) {
@@ -43,12 +42,12 @@ async function zaladujRegexyAIO() {
 zaladujRegexyAIO();
 
 function czyZawieraPolski(tytul) {
-    return polskieRegexy.some(regex => regex.test(tytul));
+    return polskieRegexy.some(function(regex) { return regex.test(tytul); });
 }
 
 function czySmiec(tytul) {
     const t = tytul.toLowerCase();
-    return EXCLUDED_KEYWORDS.some(slowo => t.includes(slowo));
+    return EXCLUDED_KEYWORDS.some(function(slowo) { return t.includes(slowo); });
 }
 
 function parsujJakoscIWersje(tytul, link) {
@@ -83,10 +82,9 @@ function parsujJakoscIWersje(tytul, link) {
     const hasPl = wersja.length > 0;
     if (hasPl) score += 100;
 
-    return { jakosc, wersja, score, hasPl };
+    return { jakosc: jakosc, wersja: wersja, score: score, hasPl: hasPl };
 }
 
-// --- 2. DEKODOWANIE CDA ---
 function dekodujCdaUrl(str) {
     if (!str) return null;
     let decoded = str
@@ -133,10 +131,9 @@ async function pobierzBezposredniLinkCDA(urlStrony) {
     return null;
 }
 
-// --- 3. SCRAPERY ---
 async function szukajNaCDA(fraza) {
     try {
-        const urlSzukania = `https://www.cda.pl/info/${encodeURIComponent(fraza)}`;
+        const urlSzukania = 'https://www.cda.pl/info/' + encodeURIComponent(fraza);
         const res = await axios.get(urlSzukania, {
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36',
@@ -148,14 +145,18 @@ async function szukajNaCDA(fraza) {
         const $ = cheerio.load(res.data);
         const znalezione = [];
 
-        $('a[href*="/video/"]').each((i, el) => {
+        $('a[href*="/video/"]').each(function(i, el) {
             const linkRel = $(el).attr('href');
-            let tytul = $(el).text().trim() \vert{}\vert{}$(el).attr('title') || '';
+            let tytul = $(el).text().trim();
+            if (!tytul) {
+                tytul = $(el).attr('title') || '';
+            }
 
             if (linkRel && tytul.length > 4 && !linkRel.includes('#comment')) {
                 if (!czySmiec(tytul)) {
-                    const pelnyLink = linkRel.startsWith('http') ? linkRel : `https://www.cda.pl${linkRel}`;
-                    if (!znalezione.some(w => w.pageUrl === pelnyLink)) {
+                    const pelnyLink = linkRel.startsWith('http') ? linkRel : ('https://www.cda.pl' + linkRel);
+                    const juzJest = znalezione.some(function(w) { return w.pageUrl === pelnyLink; });
+                    if (!juzJest) {
                         znalezione.push({ title: tytul.replace(/\s+/g, ' '), pageUrl: pelnyLink });
                     }
                 }
@@ -168,11 +169,11 @@ async function szukajNaCDA(fraza) {
             if (directUrl) {
                 const info = parsujJakoscIWersje(poz.title, directUrl);
                 const plTag = info.hasPl ? '🇵🇱 ' : '';
-                const tagWersji = info.wersja ? ` • ${info.wersja}` : '';
+                const tagWersji = info.wersja ? (' • ' + info.wersja) : '';
                 
                 streams.push({
-                    name: `${plTag}CDA [${info.jakosc}]`,
-                    title: `${poz.title}${tagWersji}`,
+                    name: plTag + 'CDA [' + info.jakosc + ']',
+                    title: poz.title + tagWersji,
                     url: directUrl,
                     qualityScore: info.score
                 });
@@ -186,7 +187,7 @@ async function szukajNaCDA(fraza) {
 
 async function szukajNaVider(fraza) {
     try {
-        const urlSzukania = `https://vider.info/szukaj?q=${encodeURIComponent(fraza)}`;
+        const urlSzukania = 'https://vider.info/szukaj?q=' + encodeURIComponent(fraza);
         const res = await axios.get(urlSzukania, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
             timeout: 6500
@@ -195,13 +196,17 @@ async function szukajNaVider(fraza) {
         const $ = cheerio.load(res.data);
         const znalezione = [];
 
-        $('a[href*="/vid/"]').each((i, el) => {
+        $('a[href*="/vid/"]').each(function(i, el) {
             const href = $(el).attr('href');
-            let tytul = $(el).text().trim() || '';
+            let tytul = $(el).text().trim();
+            if (!tytul) {
+                tytul = '';
+            }
 
             if (href && tytul && !czySmiec(tytul)) {
-                const pelnyHref = href.startsWith('http') ? href : `https://vider.info${href}`;
-                if (!znalezione.some(l => l.href === pelnyHref)) {
+                const pelnyHref = href.startsWith('http') ? href : ('https://vider.info' + href);
+                const juzJest = znalezione.some(function(l) { return l.href === pelnyHref; });
+                if (!juzJest) {
                     znalezione.push({ href: pelnyHref, tytul: tytul.replace(/\s+/g, ' ') });
                 }
             }
@@ -219,11 +224,11 @@ async function szukajNaVider(fraza) {
                     const directUrl = matchMp4[1];
                     const info = parsujJakoscIWersje(item.tytul, directUrl);
                     const plTag = info.hasPl ? '🇵🇱 ' : '';
-                    const tagWersji = info.wersja ? ` • ${info.wersja}` : '';
+                    const tagWersji = info.wersja ? (' • ' + info.wersja) : '';
 
                     streams.push({
-                        name: `${plTag}Vider [${info.jakosc}]`,
-                        title: `${item.tytul}${tagWersji}`,
+                        name: plTag + 'Vider [' + info.jakosc + ']',
+                        title: item.tytul + tagWersji,
                         url: directUrl,
                         qualityScore: info.score
                     });
@@ -236,11 +241,10 @@ async function szukajNaVider(fraza) {
     }
 }
 
-// --- 4. TMDB ---
 async function pobierzPolskiTytul(imdbId, type) {
     if (!TMDB_API_KEY) return null;
     try {
-        const findUrl = `https://api.themoviedb.org/3/find/${imdbId}?api_key=${TMDB_API_KEY}&external_source=imdb_id`;
+        const findUrl = 'https://api.themoviedb.org/3/find/' + imdbId + '?api_key=' + TMDB_API_KEY + '&external_source=imdb_id';
         const findRes = await axios.get(findUrl);
 
         let tmdbId = null;
@@ -262,7 +266,7 @@ async function pobierzPolskiTytul(imdbId, type) {
         if (!tmdbId) return null;
 
         const mediaEndpoint = type === 'series' ? 'tv' : 'movie';
-        const detailsUrl = `https://api.themoviedb.org/3/${mediaEndpoint}/${tmdbId}?api_key=${TMDB_API_KEY}&language=pl-PL`;
+        const detailsUrl = 'https://api.themoviedb.org/3/' + mediaEndpoint + '/' + tmdbId + '?api_key=' + TMDB_API_KEY + '&language=pl-PL';
         const detailsRes = await axios.get(detailsUrl);
 
         let plTitle = type === 'series' ? detailsRes.data.name : detailsRes.data.title;
@@ -275,9 +279,10 @@ async function pobierzPolskiTytul(imdbId, type) {
     }
 }
 
-// --- 5. OBSŁUGA STRUMIENI ---
-builder.defineStreamHandler(async ({ type, id }) => {
-    console.log(`\n[AIO-PL] Zapytanie: ${type} ${id}`);
+builder.defineStreamHandler(async function(args) {
+    const type = args.type;
+    const id = args.id;
+    console.log('\n[AIO-PL] Zapytanie: ' + type + ' ' + id);
 
     const parts = id.split(':');
     const imdbId = parts[0];
@@ -291,36 +296,40 @@ builder.defineStreamHandler(async ({ type, id }) => {
     if (type === 'series' && season && episode) {
         const s = String(season).padStart(2, '0');
         const e = String(episode).padStart(2, '0');
-        frazy.push(`${dane.tytul} s${s}e${e}`);
-        frazy.push(`${dane.tytul} sezon ${season} odcinek ${episode}`);
+        frazy.push(dane.tytul + ' s' + s + 'e' + e);
+        frazy.push(dane.tytul + ' sezon ' + season + ' odcinek ' + episode);
     } else {
         frazy.push(dane.tytul);
-        if (dane.rok) frazy.push(`${dane.tytul} ${dane.rok}`);
+        if (dane.rok) frazy.push(dane.tytul + ' ' + dane.rok);
     }
 
-    console.log(`[AIO-PL] Szukam: "${frazy[0]}"`);
+    console.log('[AIO-PL] Szukam: "' + frazy[0] + '"');
 
     let zebrane = [];
     for (const fraza of frazy) {
-        const [cda, vider] = await Promise.all([
+        const wyniki = await Promise.all([
             szukajNaCDA(fraza),
             szukajNaVider(fraza)
         ]);
+        const cda = wyniki[0];
+        const vider = wyniki[1];
 
-        for (const st of [...cda, ...vider]) {
-            if (!zebrane.some(x => x.url === st.url)) {
+        const polaczone = cda.concat(vider);
+        for (const st of polaczone) {
+            const juzJest = zebrane.some(function(x) { return x.url === st.url; });
+            if (!juzJest) {
                 zebrane.push(st);
             }
         }
         if (zebrane.length > 0) break;
     }
 
-    zebrane.sort((a, b) => b.qualityScore - a.qualityScore);
+    zebrane.sort(function(a, b) { return b.qualityScore - a.qualityScore; });
 
-    console.log(`[AIO-PL] Zwrocono ${zebrane.length} zrodel`);
+    console.log('[AIO-PL] Zwrocono ' + zebrane.length + ' zrodel');
     return { streams: zebrane };
 });
 
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port: port });
-console.log(`Serwer AIO-PL dziala na porcie ${port}`);
+console.log('Serwer AIO-PL dziala na porcie ' + port);
